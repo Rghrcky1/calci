@@ -44,6 +44,11 @@ button.secondary{background:#eee;color:#111}
 .modal-content{background:#fff;padding:16px;border-radius:12px;max-width:420px;width:92%}
 .modal-content h3{margin-top:0}
 
+/* Bulk delete list */
+.delete-list{max-height:260px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:8px;margin-top:8px;background:#fafafa}
+.delete-item{display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #eee}
+.delete-item:last-child{border-bottom:0}
+
 /* small improvements for tiny screens */
 @media (min-width:600px){ .wrap{margin-top:80px} h1{font-size:22px} }
 </style>
@@ -111,10 +116,11 @@ button.secondary{background:#eee;color:#111}
 </div>
 
 <!-- modal for add/edit pair (password required) -->
-<div id="editModal" class="modal">
+<div id="editModal" class="modal" aria-hidden="true">
   <div class="modal-content">
     <h3>Add / Edit Pair (Password Required)</h3>
 
+    <!-- Step 1: password unlock for modal -->
     <div id="modalStep1">
       <input type="password" id="modalPassword" placeholder="Enter password" />
       <div style="display:flex;gap:8px;margin-top:8px">
@@ -124,6 +130,7 @@ button.secondary{background:#eee;color:#111}
       <div id="modalMsg" class="tiny" style="color:#b00020;margin-top:6px"></div>
     </div>
 
+    <!-- Step 2: edit content -->
     <div id="editContent" style="display:none;margin-top:10px">
       <label>Pair code (e.g. EURJPY)</label>
       <input id="newPair" type="text" placeholder="Pair name (uppercase)">
@@ -137,8 +144,26 @@ button.secondary{background:#eee;color:#111}
         <button onclick="addOrEditPair()">Save Pair</button>
         <button class="secondary" onclick="closeEditModal()">Close</button>
       </div>
-      <div style="margin-top:10px">
-        <button class="secondary" onclick="changePassword()">Change Password</button>
+
+      <div style="margin-top:14px;border-top:1px solid #eee;padding-top:12px">
+        <!-- Bulk delete entry point (inside modal as requested) -->
+        <div style="display:flex;gap:8px;">
+          <button onclick="openDeleteView()" class="secondary" style="flex:1;background:#fff;color:#111;border:1px solid #d6dbe6">Delete Pairs</button>
+          <button class="secondary" onclick="changePassword()" style="flex:1">Change Password</button>
+        </div>
+
+        <!-- Delete view (hidden initially) -->
+        <div id="deleteView" style="display:none;margin-top:12px">
+          <div style="font-weight:700;margin-bottom:8px">Delete user-added pairs</div>
+          <div class="delete-list" id="deleteList">
+            <!-- Filled dynamically with checkboxes for user-added pairs -->
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button onclick="deleteSelected()" style="flex:1;background:#d9534f">Delete Selected</button>
+            <button class="secondary" onclick="closeDeleteView()" style="flex:1">Back</button>
+          </div>
+          <div class="tiny" style="margin-top:8px;color:#666">Default/preloaded pairs are locked and won't appear here.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -147,14 +172,7 @@ button.secondary{background:#eee;color:#111}
 <script>
 /* ============================
    CONFIG - easy to edit area
-   ============================
-   Modify the pairs object below to change preloaded point/pip/commission.
-   point = value per point for 1 standard lot (in USD)
-   pip   = value per pip for 1 standard lot (in USD) [if you prefer pips]
-   commission = commission $ per 1 standard lot
-
-   XAUUSD: if you want to set custom point/pip for gold, set those values here.
-*/
+   ============================ */
 const INITIAL_PASSWORD = "6565";
 const STORAGE_KEY_PAIRS = "lotcalc_pairs_v2";
 const STORAGE_KEY_PASSWORD = "lotcalc_app_pass_v2";
@@ -262,6 +280,9 @@ function openEdit(){
   document.getElementById('modalPassword').value = '';
   document.getElementById('modalMsg').innerText = '';
   document.getElementById('editContent').style.display = 'none';
+  document.getElementById('deleteView').style.display = 'none';
+  document.getElementById('deleteList').innerHTML = '';
+  document.getElementById('modalStep1').style.display = 'block';
 }
 function closeEditModal(){
   document.getElementById('editModal').style.display = 'none';
@@ -272,6 +293,7 @@ function checkModalPassword(){
   if (typed === real) {
     document.getElementById('editContent').style.display = 'block';
     document.getElementById('modalMsg').innerText = '';
+    document.getElementById('modalStep1').style.display = 'none';
     const s = document.getElementById('pair').value;
     if (pairs[s]) {
       document.getElementById('newPair').value = s;
@@ -302,6 +324,76 @@ function addOrEditPair(){
   populatePairs();
   alert(name + " saved.");
   closeEditModal();
+}
+
+/* ---------------------------
+   Bulk delete: inside modal (Style 1)
+   - shows only user-added pairs (not defaultPairs)
+   --------------------------- */
+function openDeleteView(){
+  // Build list of user-added pairs (those present in pairs but NOT in defaultPairs)
+  const deleteListDiv = document.getElementById('deleteList');
+  deleteListDiv.innerHTML = '';
+  const userPairs = Object.keys(pairs).filter(k => !defaultPairs.hasOwnProperty(k)).sort();
+
+  if (userPairs.length === 0) {
+    deleteListDiv.innerHTML = '<div class="tiny">No user-added pairs to delete.</div>';
+  } else {
+    userPairs.forEach(sym => {
+      const item = document.createElement('div');
+      item.className = 'delete-item';
+      const left = document.createElement('div');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = sym;
+      cb.style.marginRight = '10px';
+      left.appendChild(cb);
+      const label = document.createElement('div');
+      label.innerText = sym;
+      left.appendChild(label);
+      item.appendChild(left);
+      deleteListDiv.appendChild(item);
+    });
+  }
+
+  // show deleteView, hide edit fields (but keep modal)
+  document.getElementById('deleteView').style.display = 'block';
+  // keep editContent visible above, but scroll to deleteView
+  document.getElementById('deleteView').scrollIntoView({behavior:'smooth'});
+}
+
+function closeDeleteView(){
+  document.getElementById('deleteView').style.display = 'none';
+  // clear any checked boxes
+  const deleteListDiv = document.getElementById('deleteList');
+  deleteListDiv.innerHTML = '';
+}
+
+function deleteSelected(){
+  const deleteListDiv = document.getElementById('deleteList');
+  const checkboxes = deleteListDiv.querySelectorAll('input[type="checkbox"]:checked');
+  if (checkboxes.length === 0) { alert("No pairs selected."); return; }
+
+  const toDelete = Array.from(checkboxes).map(cb => cb.value);
+  if (!confirm("Delete selected pairs? This cannot be undone.")) return;
+
+  let changed = false;
+  toDelete.forEach(sym => {
+    if (pairs[sym]) {
+      delete pairs[sym];
+      changed = true;
+    }
+  });
+  if (changed) {
+    try { localStorage.setItem(STORAGE_KEY_PAIRS, JSON.stringify(pairs)); } catch(e){}
+    populatePairs();
+    alert("Deleted: " + toDelete.join(", "));
+  } else {
+    alert("Nothing deleted.");
+  }
+  closeDeleteView();
 }
 
 /* ---------------------------
